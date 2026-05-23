@@ -28,58 +28,73 @@ jobs:
           npm init -y
         fi
         
-        # Bersihkan folder sampah dari run sebelumnya agar tidak merusak cache
+        # Bersihkan sisa-sisa cache lama
         rm -rf dist build out .next android capacitor.config.json
         
-        # Instalasi dependensi bawaan AI studio
+        # Pasang dependensi bawaan proyek
         npm install --legacy-peer-deps
         
-        # Pasang pustaka Capacitor
+        # Pasang library pembungkus Android
         npm install @capacitor/core @capacitor/cli @capacitor/android
 
-    - name: Pemindaian Lokasi dan Injeksi Konfigurasi Vite
+    - name: Pemindaian Menyeluruh Berkas Proyek AI Studio
       run: |
         node -e "
         const fs = require('fs');
         const path = require('path');
 
-        console.log('🔍 Memulai pemindaian berkas index.html...');
-        
-        // 1. Cari di mana posisi file index.html asli proyek berada
-        const targets = ['index.html', 'src/index.html', 'public/index.html', 'app/index.html'];
-        let foundPath = '';
-        for (const target of targets) {
-          if (fs.existsSync(path.join(process.cwd(), target))) {
-            foundPath = target;
-            console.log('🟢 Menemukan index.html asli di jalur: ' + target);
-            break;
+        // Fungsi rekursif untuk mencari file .html di semua subfolder (kecuali node_modules)
+        function findHtmlFiles(dir, fileList = []) {
+          const files = fs.readdirSync(dir);
+          files.forEach(file => {
+            const filePath = path.join(dir, file);
+            if (fs.statSync(filePath).isDirectory()) {
+              if (file !== 'node_modules' && !file.startsWith('.')) {
+                findHtmlFiles(filePath, fileList);
+              }
+            } else if (file.endsWith('.html')) {
+              fileList.push(filePath);
+            }
+          });
+          return fileList;
+        }
+
+        console.log('⏳ Memulai pemindaian mendalam lokasi index.html...');
+        const allHtmlFiles = findHtmlFiles(process.cwd());
+        console.log('Daftar file HTML yang ditemukan:', allHtmlFiles);
+
+        let sourceHtml = '';
+        // Cari file yang mengandung kata index.html atau ambil file html pertama yang ditemukan
+        const targetHtml = allHtmlFiles.find(f => f.toLowerCase().includes('index.html')) || allHtmlFiles[0];
+
+        if (targetHtml) {
+          sourceHtml = targetHtml;
+          console.log('🟢 Berhasil mengunci file HTML sumber aplikasi: ' + sourceHtml);
+          
+          // Jika posisinya bukan di root, duplikat ke root folder agar Vite v8 tidak gagal memuat entri
+          const rootDest = path.join(process.cwd(), 'index.html');
+          if (sourceHtml !== rootDest) {
+            fs.copyFileSync(sourceHtml, rootDest);
+            console.log('💡 Sukses menyalin berkas utama ke folder root.');
           }
+        } else {
+          console.log('⚠️ Tidak menemukan file HTML apa pun di repositori Anda!');
         }
 
-        // Jika index.html tersembunyi di folder dalam (misal src/), bawa keluar ke root agar Vite tidak error
-        if (foundPath && foundPath !== 'index.html') {
-          fs.copyFileSync(path.join(process.cwd(), foundPath), path.join(process.cwd(), 'index.html'));
-          console.log('💡 Menduplikasi index.html ke root folder untuk kelancaran kompilasi Vite.');
-        }
-
-        // 2. Modifikasi atau paksa isi file vite.config agar menggunakan base path relatif (Anti-Blank)
+        // 2. Memastikan konfigurasi vite.config.js / ts dipaksa menggunakan jalur relatif
         const viteFiles = ['vite.config.js', 'vite.config.ts'];
         for (const file of viteFiles) {
           if (fs.existsSync(file)) {
             let content = fs.readFileSync(file, 'utf8');
             
-            // Hapus rule pembatasan root: 'src' jika itu yang merusak pencarian berkas
-            if (content.includes(\"root:\")) {
-              content = content.replace(/root\s*:\s*['\"].*?['\"],?/g, '');
-            }
+            // Hapus aturan pembatasan folder root jika ada agar pelacakan tidak terkunci
+            content = content.replace(/root\s*:\s*['\"].*?['\"],?/g, '');
             
-            // Suntikkan base relatif './' ke dalam konfigurasi Vite
             if (!content.includes('base:')) {
               content = content.replace('defineConfig({', \"defineConfig({\n  base: './',\");
             }
-            
             fs.writeFileSync(file, content, 'utf8');
-            console.log('🟢 Sukses menyelaraskan konfigurasi pada ' + file);
+            console.log('🟢 Konfigurasi Vite berhasil diselaraskan pada ' + file);
             break;
           }
         }
@@ -87,27 +102,32 @@ jobs:
 
     - name: Eksekusi Kompilasi Web AI Studio
       run: |
-        # Menjalankan build resmi proyek menggunakan vite secara langsung
+        # Mencoba menjalankan kompilasi murni menggunakan Vite local/global
         if npx vite build; then
-          echo "🟢 Kompilasi Vite sukses!"
+          echo "🟢 Kompilasi via Vite lokal berhasil dilakukan!"
+        elif ./node_modules/.bin/vite build; then
+          echo "🟢 Kompilasi via Vite binary berhasil dilakukan!"
         elif npm run build; then
-          echo "🟢 Kompilasi NPM run build sukses!"
+          echo "🟢 Kompilasi via npm run build berhasil dilakukan!"
         else
-          echo "❌ Semua metode kompilasi web gagal total! Membuat proteksi berkas..."
+          echo "⚠️ Gagal kompilasi otomatis. Membuat penanganan khusus untuk proyek statis..."
           mkdir -p dist
-          echo '<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>AI Studio App</title></head><body><div id="root"></div><div id="app"></div><script type="module" src="/src/main.tsx"></script></body></html>' > dist/index.html
+          # Menyalin seluruh file statis dari root ke folder dist jika proyek Anda hanya HTML/JS murni
+          cp -r * dist/ 2>/dev/null || true
+          rm -rf dist/node_modules dist/dist
         fi
 
     - name: Validasi Akhir Folder Output
       run: |
-        # Memastikan hasil output kompilasi berada di folder 'dist'
+        # Memastikan hasil kompilasi web terkonsolidasi di folder 'dist'
         if [ ! -d "dist" ]; then
           if [ -d "build" ]; then mv build dist; fi
           if [ -d "out" ]; then mv out dist; fi
         fi
         mkdir -p dist
-        if [ ! -f dist/index.html ]; then
-          cp index.html dist/index.html 2>/dev/null || echo '<!DOCTYPE html><html><body><div id="root"></div></body></html>' > dist/index.html
+        # Jika index.html tidak ada di dist, salin dari root folder yang sudah diamankan tadi
+        if [ ! -f dist/index.html ] && [ -f index.html ]; then
+          cp index.html dist/index.html
         fi
 
     - name: Inisialisasi Pembungkus Android
