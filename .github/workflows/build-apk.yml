@@ -28,22 +28,22 @@ jobs:
           npm init -y
         fi
         
-        # Bersihkan sisa-sisa cache lama
-        rm -rf dist build out .next android capacitor.config.json
+        # Bersihkan sisa cache agar folder fresh
+        rm -rf dist build out .next android capacitor.config.json index.html
         
-        # Pasang dependensi bawaan proyek
+        # Install dependency asli proyek
         npm install --legacy-peer-deps
         
-        # Pasang library pembungkus Android
+        # Install library pembungkus Android
         npm install @capacitor/core @capacitor/cli @capacitor/android
 
-    - name: Pemindaian Menyeluruh Berkas Proyek AI Studio
+    - name: Pemindaian dan Fabrikasi index.html Darurat AI Studio
       run: |
         node -e "
         const fs = require('fs');
         const path = require('path');
 
-        // Fungsi rekursif untuk mencari file .html di semua subfolder (kecuali node_modules)
+        // 1. Fungsi melacak file HTML
         function findHtmlFiles(dir, fileList = []) {
           const files = fs.readdirSync(dir);
           files.forEach(file => {
@@ -59,42 +59,64 @@ jobs:
           return fileList;
         }
 
-        console.log('⏳ Memulai pemindaian mendalam lokasi index.html...');
         const allHtmlFiles = findHtmlFiles(process.cwd());
-        console.log('Daftar file HTML yang ditemukan:', allHtmlFiles);
+        let rootIndexExists = fs.existsSync(path.join(process.cwd(), 'index.html'));
 
-        let sourceHtml = '';
-        // Cari file yang mengandung kata index.html atau ambil file html pertama yang ditemukan
-        const targetHtml = allHtmlFiles.find(f => f.toLowerCase().includes('index.html')) || allHtmlFiles[0];
-
-        if (targetHtml) {
-          sourceHtml = targetHtml;
-          console.log('🟢 Berhasil mengunci file HTML sumber aplikasi: ' + sourceHtml);
+        // 2. JIKA SAMA SEKALI TIDAK ADA FILE HTML (Kasus Khas AI Studio Terkini)
+        if (allHtmlFiles.length === 0) {
+          console.log('⚠️ Deteksi repositori tanpa file HTML fisik. Memulai perakitan template entry point...');
           
-          // Jika posisinya bukan di root, duplikat ke root folder agar Vite v8 tidak gagal memuat entri
-          const rootDest = path.join(process.cwd(), 'index.html');
-          if (sourceHtml !== rootDest) {
-            fs.copyFileSync(sourceHtml, rootDest);
-            console.log('💡 Sukses menyalin berkas utama ke folder root.');
+          // Cari file JavaScript utama yang menjadi motor penggerak React Anda
+          const searchPaths = [
+            'src/main.tsx', 'src/index.tsx', 'src/main.jsx', 'src/index.jsx',
+            'src/index.js', 'src/app.tsx', 'src/App.tsx', 'main.tsx'
+          ];
+          
+          let mainJsFile = '';
+          for (const sp of searchPaths) {
+            if (fs.existsSync(path.join(process.cwd(), sp))) {
+              mainJsFile = sp;
+              break;
+            }
           }
+
+          if (!mainJsFile) {
+            // Fallback: Cari file tsx/jsx acak di dalam folder src jika tidak ketemu di jalur standar
+            if (fs.existsSync(path.join(process.cwd(), 'src'))) {
+              const srcFiles = fs.readdirSync(path.join(process.cwd(), 'src'));
+              const jsFile = srcFiles.find(f => f.endsWith('.tsx') || f.endsWith('.jsx') || f.endsWith('.ts') || f.endsWith('.js'));
+              if (jsFile) mainJsFile = 'src/' + jsFile;
+            }
+          }
+
+          console.log('🟢 Mengunci modul JavaScript utama: ' + (mainJsFile || 'Tidak terdeteksi, menggunakan fallback generic'));
+
+          // Bangun file index.html standar Vite React di root folder
+          const scriptTag = mainJsFile ? '<script type=\"module\" src=\"/' + mainJsFile + '\"></script>' : '<script type=\"module\" src=\"/src/main.tsx\"></script>';
+          const htmlTemplate = '<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n  <meta charset=\"UTF-8\" />\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\n  <title>Any Video Downloader</title>\n</head>\n<body>\n  <div id=\"root\"></div>\n  <div id=\"app\"></div>\n  ' + scriptTag + '\n</body>\n</html>';
+          
+          fs.writeFileSync(path.join(process.cwd(), 'index.html'), htmlTemplate, 'utf8');
+          console.log('🟢 Perakitan index.html sukses dilakukan di folder root!');
         } else {
-          console.log('⚠️ Tidak menemukan file HTML apa pun di repositori Anda!');
+          // Jika ada file HTML tapi bersembunyi di subfolder, salin ke root agar Vite tidak bingung
+          const detectedHtml = allHtmlFiles.find(f => f.toLowerCase().includes('index.html')) || allHtmlFiles[0];
+          if (detectedHtml && !rootIndexExists) {
+            fs.copyFileSync(detectedHtml, path.join(process.cwd(), 'index.html'));
+            console.log('💡 Menduplikasi berkas ' + detectedHtml + ' ke root folder.');
+          }
         }
 
-        // 2. Memastikan konfigurasi vite.config.js / ts dipaksa menggunakan jalur relatif
+        // 3. Konfigurasi ulang base path pada file vite.config agar menggunakan jalur relatif (Anti-Blank)
         const viteFiles = ['vite.config.js', 'vite.config.ts'];
         for (const file of viteFiles) {
           if (fs.existsSync(file)) {
             let content = fs.readFileSync(file, 'utf8');
-            
-            // Hapus aturan pembatasan folder root jika ada agar pelacakan tidak terkunci
-            content = content.replace(/root\s*:\s*['\"].*?['\"],?/g, '');
-            
+            content = content.replace(/root\s*:\s*['\"].*?['\"],?/g, ''); // Hapus pembatasan root folder
             if (!content.includes('base:')) {
               content = content.replace('defineConfig({', \"defineConfig({\n  base: './',\");
             }
             fs.writeFileSync(file, content, 'utf8');
-            console.log('🟢 Konfigurasi Vite berhasil diselaraskan pada ' + file);
+            console.log('🟢 Parameter konfigurasi Vite sukses diperbarui pada ' + file);
             break;
           }
         }
@@ -102,30 +124,28 @@ jobs:
 
     - name: Eksekusi Kompilasi Web AI Studio
       run: |
-        # Mencoba menjalankan kompilasi murni menggunakan Vite local/global
-        if npx vite build; then
-          echo "🟢 Kompilasi via Vite lokal berhasil dilakukan!"
-        elif ./node_modules/.bin/vite build; then
-          echo "🟢 Kompilasi via Vite binary berhasil dilakukan!"
-        elif npm run build; then
-          echo "🟢 Kompilasi via npm run build berhasil dilakukan!"
+        # Jalankan kompilasi web berbasis Vite lokal dengan jaminan file index.html sudah di posisi
+        if ./node_modules/.bin/vite build; then
+          echo "🟢 Kompilasi via Vite Binary sukses!"
+        elif npx vite build; then
+          echo "🟢 Kompilasi via Vite CLI sukses!"
+        elif npm run build --if-present; then
+          echo "🟢 Kompilasi via NPM run build sukses!"
         else
-          echo "⚠️ Gagal kompilasi otomatis. Membuat penanganan khusus untuk proyek statis..."
+          echo "⚠️ Proses kompilasi gagal, mengaktifkan mode salin berkas manual..."
           mkdir -p dist
-          # Menyalin seluruh file statis dari root ke folder dist jika proyek Anda hanya HTML/JS murni
           cp -r * dist/ 2>/dev/null || true
           rm -rf dist/node_modules dist/dist
         fi
 
     - name: Validasi Akhir Folder Output
       run: |
-        # Memastikan hasil kompilasi web terkonsolidasi di folder 'dist'
+        # Konsolidasi struktur agar folder 'dist' siap menampung index.html hasil build
         if [ ! -d "dist" ]; then
           if [ -d "build" ]; then mv build dist; fi
           if [ -d "out" ]; then mv out dist; fi
         fi
         mkdir -p dist
-        # Jika index.html tidak ada di dist, salin dari root folder yang sudah diamankan tadi
         if [ ! -f dist/index.html ] && [ -f index.html ]; then
           cp index.html dist/index.html
         fi
