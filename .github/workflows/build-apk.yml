@@ -16,10 +16,10 @@ jobs:
       uses: actions/setup-java@v4
       with:
         distribution: 'zulu'
-        java-version: '17' # Proyek Kotlin/Gradle umumnya sangat stabil di JDK 17
+        java-version: '17'
 
     - name: Setup Gradle Cache
-      uses: actions/setup-gradle@v4
+      uses: gradle/actions/setup-gradle@v4 # 🟢 DIPERBAIKI: Jalur aksi Gradle yang benar
 
     - name: Berikan Izin Eksekusi Gradle
       run: chmod +x gradlew
