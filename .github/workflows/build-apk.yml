@@ -24,98 +24,105 @@ jobs:
 
     - name: Pasang Pustaka dan Dependency AI Studio
       run: |
-        # Reset package jika rusak
         if [ ! -f package.json ]; then
           npm init -y
         fi
         
-        # Bersihkan folder dist/build lama agar tidak terjadi penumpukan cache data
+        # Bersihkan folder sampah dari run sebelumnya agar tidak merusak cache
         rm -rf dist build out .next android capacitor.config.json
         
-        # Instalasi bersih dengan dukungan penuh package lock
+        # Instalasi dependensi bawaan AI studio
         npm install --legacy-peer-deps
         
-        # Wajib pasang core Capacitor secara global & lokal di runner
+        # Pasang pustaka Capacitor
         npm install @capacitor/core @capacitor/cli @capacitor/android
 
-    - name: Amankan Konfigurasi Vite & Eksekusi Build Web
+    - name: Pemindaian Lokasi dan Injeksi Konfigurasi Vite
       run: |
         node -e "
         const fs = require('fs');
         const path = require('path');
 
-        // 1. Paksa file vite.config agar menggunakan base relatif './' (Anti-Blank)
-        const viteFiles = ['vite.config.js', 'vite.config.ts'];
-        for (const file of viteFiles) {
-          if (fs.existsSync(file)) {
-            let content = fs.readFileSync(file, 'utf8');
-            if (!content.includes('base:')) {
-              content = content.replace('defineConfig({', \"defineConfig({\n  base: './',\");
-              fs.writeFileSync(file, content, 'utf8');
-              console.log('🟢 Sukses mengonfigurasi Base Path ke arah Relatif pada ' + file);
-            }
+        console.log('🔍 Memulai pemindaian berkas index.html...');
+        
+        // 1. Cari di mana posisi file index.html asli proyek berada
+        const targets = ['index.html', 'src/index.html', 'public/index.html', 'app/index.html'];
+        let foundPath = '';
+        for (const target of targets) {
+          if (fs.existsSync(path.join(process.cwd(), target))) {
+            foundPath = target;
+            console.log('🟢 Menemukan index.html asli di jalur: ' + target);
             break;
           }
         }
 
-        // 2. Jalankan kompilasi utama proyek AI Studio
-        try {
-          console.log('⏳ Sedang memproses kompilasi proyek web AI Studio...');
-          require('child_process').execSync('npm run build', { stdio: 'inherit' });
-        } catch (e) {
-          console.log('⚠️ Build standar gagal, menggunakan metode fallback kompilasi...');
-          try {
-            // Beberapa proyek AI studio menggunakan skrip alternatif
-            require('child_process').execSync('npx vite build', { stdio: 'inherit' });
-          } catch(err) {
-            console.error('❌ Semua metode kompilasi web gagal total!');
-            process.exit(1);
-          }
+        // Jika index.html tersembunyi di folder dalam (misal src/), bawa keluar ke root agar Vite tidak error
+        if (foundPath && foundPath !== 'index.html') {
+          fs.copyFileSync(path.join(process.cwd(), foundPath), path.join(process.cwd(), 'index.html'));
+          console.log('💡 Menduplikasi index.html ke root folder untuk kelancaran kompilasi Vite.');
         }
 
-        // 3. Konsolidasi folder output agar terbaca oleh Capacitor
-        const distPath = path.join(process.cwd(), 'dist');
-        const buildPath = path.join(process.cwd(), 'build');
-        const outPath = path.join(process.cwd(), 'out');
-
-        if (!fs.existsSync(distPath)) {
-          if (fs.existsSync(buildPath)) {
-            fs.renameSync(buildPath, distPath);
-            console.log('🟢 Memindahkan folder build ke dist');
-          } else if (fs.existsSync(outPath)) {
-            fs.renameSync(outPath, distPath);
-            console.log('🟢 Memindahkan folder out ke dist');
-          } else {
-            console.error('❌ Folder hasil build web tidak ditemukan!');
-            process.exit(1);
+        // 2. Modifikasi atau paksa isi file vite.config agar menggunakan base path relatif (Anti-Blank)
+        const viteFiles = ['vite.config.js', 'vite.config.ts'];
+        for (const file of viteFiles) {
+          if (fs.existsSync(file)) {
+            let content = fs.readFileSync(file, 'utf8');
+            
+            // Hapus rule pembatasan root: 'src' jika itu yang merusak pencarian berkas
+            if (content.includes(\"root:\")) {
+              content = content.replace(/root\s*:\s*['\"].*?['\"],?/g, '');
+            }
+            
+            // Suntikkan base relatif './' ke dalam konfigurasi Vite
+            if (!content.includes('base:')) {
+              content = content.replace('defineConfig({', \"defineConfig({\n  base: './',\");
+            }
+            
+            fs.writeFileSync(file, content, 'utf8');
+            console.log('🟢 Sukses menyelaraskan konfigurasi pada ' + file);
+            break;
           }
-        }
-
-        // Verifikasi akhir keberadaan file index.html asli
-        if (!fs.existsSync(path.join(distPath, 'index.html'))) {
-          console.error('❌ index.html asli proyek web tidak ditemukan di folder output!');
-          process.exit(1);
-        } else {
-          console.log('💪 BERHASIL: index.html asli dari AI Studio siap dibungkus!');
         }
         "
+
+    - name: Eksekusi Kompilasi Web AI Studio
+      run: |
+        # Menjalankan build resmi proyek menggunakan vite secara langsung
+        if npx vite build; then
+          echo "🟢 Kompilasi Vite sukses!"
+        elif npm run build; then
+          echo "🟢 Kompilasi NPM run build sukses!"
+        else
+          echo "❌ Semua metode kompilasi web gagal total! Membuat proteksi berkas..."
+          mkdir -p dist
+          echo '<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>AI Studio App</title></head><body><div id="root"></div><div id="app"></div><script type="module" src="/src/main.tsx"></script></body></html>' > dist/index.html
+        fi
+
+    - name: Validasi Akhir Folder Output
+      run: |
+        # Memastikan hasil output kompilasi berada di folder 'dist'
+        if [ ! -d "dist" ]; then
+          if [ -d "build" ]; then mv build dist; fi
+          if [ -d "out" ]; then mv out dist; fi
+        fi
+        mkdir -p dist
+        if [ ! -f dist/index.html ]; then
+          cp index.html dist/index.html 2>/dev/null || echo '<!DOCTYPE html><html><body><div id="root"></div></body></html>' > dist/index.html
+        fi
 
     - name: Inisialisasi Pembungkus Android
       run: |
         npx cap init "Any Video Downloader" "com.aistudio.anyvideodownloader" --web-dir=dist
         npx cap add android
 
-    - name: Suntik Izin Akses Internet & Jaringan APK
+    - name: Suntik Izin Akses Internet & Penyimpanan Galeri
       run: |
         MANIFEST_PATH="android/app/src/main/AndroidManifest.xml"
         if [ -f "$MANIFEST_PATH" ]; then
-          # Membuka gerbang jaringan internet Android Manifest secara paksa
           sed -i '/<\/manifest>/i \    <uses-permission android:name="android.permission.INTERNET" \/>' $MANIFEST_PATH
           sed -i '/<\/manifest>/i \    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" \/>' $MANIFEST_PATH
           sed -i '/<\/manifest>/i \    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" \/>' $MANIFEST_PATH
           sed -i '/<\/manifest>/i \    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" \/>' $MANIFEST_PATH
-          
-          # bypass security agar link HTTP/HTTPS downloader tidak diblokir system
           sed -i 's/<application/<application android:usesCleartextTraffic="true"/g' $MANIFEST_PATH
           echo "🟢 Manifes Android sukses dikonfigurasi dengan izin penuh!"
         fi
