@@ -16,12 +16,22 @@ jobs:
       uses: actions/setup-java@v4
       with:
         distribution: 'zulu'
-        java-version: '21' # Tetap di Java 21 karena Gradle 9+ wajib menggunakan Java versi tinggi
+        java-version: '21'
 
     - name: Pasang Ulang Gradle Wrapper Resmi (Anti-Corrupt)
       run: |
-        # 🟢 VERSI DIPERBARUI: Mengunduh Gradle versi 9.3.1 untuk mendukung plugin AGP 9.1.1 proyek Anda
         gradle wrapper --gradle-version 9.3.1 --distribution-type all
+
+    # 🟢 BARU: Dekode kunci debug.keystore agar Gradle bisa menandatangani paket APK Anda
+    - name: Ekstrak Keystore Debug Aplikasi
+      run: |
+        if [ -f debug.keystore.base64 ]; then
+          base64 -d debug.keystore.base64 > debug.keystore
+          echo "🟢 Berhasil merakit berkas debug.keystore asli!"
+        else
+          echo "⚠️ debug.keystore.base64 tidak ditemukan, membuat keystore debug darurat..."
+          keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+        fi
 
     - name: Berikan Izin Eksekusi Gradle
       run: chmod +x gradlew
