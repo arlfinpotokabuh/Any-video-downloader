@@ -25,49 +25,54 @@ jobs:
         distribution: 'zulu'
         java-version: '17'
 
-    - name: Pasang Dependency Kompilasi
+    - name: Pasang Dependency Utama Proyek
       run: |
-        # Mengisi package.json dasar jika belum ada
         if [ ! -f package.json ]; then
           npm init -y
         fi
-        # Install dependency proyek + Capacitor sekaligus agar tidak bentrok
         npm install
         npm install @capacitor/core @capacitor/cli @capacitor/android
 
-    - name: Inisialisasi Proyek Web AI Studio
+    - name: Siapkan Aset Web (Wajib Sebelum Capacitor)
       run: |
-        # 🟢 1. Jalankan build framework terlebih dahulu jika ada
+        # 1. Jalankan build bawaan proyek jika ada
         npm run build --if-present
 
-        # 🟢 2. Jika framework TIDAK menghasilkan folder 'dist', buat manual
+        # 2. Buat folder dist secara manual jika belum terbentuk oleh perintah build
         if [ ! -d "dist" ]; then
           mkdir -p dist
         fi
         
-        # Strategi 1: Jika kompilasi menghasilkan folder build/out, pindahkan isinya ke dist
+        # 3. Strategi Pemindahan: Salin hasil build dari folder alternatif lain ke dist
         if [ -d "out" ]; then cp -r out/* dist/ 2>/dev/null || true; fi
         if [ -d "build" ] && [ "build" != "dist" ]; then cp -r build/* dist/ 2>/dev/null || true; fi
         if [ -d ".next" ]; then cp -r .next/* dist/ 2>/dev/null || true; fi
         
-        # Strategi 2: Salin file statis yang ada di folder utama ke dist
+        # 4. Strategi Salin File Statis: Ambil file dari root directory ke dist
         cp *.html dist/ 2>/dev/null || true
         cp *.css dist/ 2>/dev/null || true
         cp *.js dist/ 2>/dev/null || true
         cp -r public/* dist/ 2>/dev/null || true
         
-        # Strategi 3 (Proteksi): Jika index.html TETAP tidak ada, buat file index.html otomatis
+        # 5. Proteksi Mutlak: Jika index.html tetap kosong/tidak ada, buat secara paksa
+        # Langkah ini krusial agar Capacitor tidak menghentikan proses build (crash)
         if [ ! -f dist/index.html ]; then
           echo '<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>AI Studio App</title></head><body><div id="root"></div><div id="app"></div><script src="index.js"></script><script src="main.js"></script><script src="bundle.js"></script></body></html>' > dist/index.html
-          # Cari file js utama dan salin ke dist jika ada di folder luar
+          
+          # Cari file js utama proyek dan pasangkan ke index.html buatan tadi
           FILE_JS=$(find . -maxdepth 1 -name "*.js" -not -name "package*.js" -not -name "capacitor.config.js" | head -n 1)
           if [ -n "$FILE_JS" ]; then cp "$FILE_JS" dist/index.js; fi
         fi
 
-    - name: Konfigurasi Pembungkus Android
+    - name: Inisialisasi dan Konfigurasi Capacitor
       run: |
-        # Buat konfigurasi secara terprogram tanpa menu interaktif
+        # Menghapus folder android lama jika ada untuk menghindari konflik penulisan ulang
+        rm -rf android
+        
+        # Buat berkas konfigurasi capacitor.config.json secara otomatis
         npx cap init "AI Studio App" "com.aistudio.myapp" --web-dir=dist
+        
+        # Tambahkan platform android setelah folder dist terverifikasi berisi index.html
         npx cap add android
 
     - name: Sinkronisasi Berkas Web ke Android
