@@ -18,7 +18,10 @@ jobs:
         distribution: 'zulu'
         java-version: '17'
 
-    # 🟢 Aksi setup-gradle dibuang total untuk menghindari error validasi biner .jar
+    - name: Pasang Ulang Gradle Wrapper Resmi (Anti-Corrupt)
+      run: |
+        # Mengunduh dan memasang ulang file gradle-wrapper.jar yang bersih dari server resmi Gradle
+        gradle wrapper --gradle-version 8.5 --distribution-type all
 
     - name: Berikan Izin Eksekusi Gradle
       run: chmod +x gradlew
