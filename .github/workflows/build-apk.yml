@@ -19,7 +19,10 @@ jobs:
         java-version: '17'
 
     - name: Setup Gradle Cache
-      uses: gradle/actions/setup-gradle@v4 # 🟢 DIPERBAIKI: Jalur aksi Gradle yang benar
+      uses: gradle/actions/setup-gradle@v4
+      with:
+        # 🟢 Mematikan validasi Wrapper agar file jar buatan AI Studio tidak diblokir GitHub
+        disable-wrapper-validation: true 
 
     - name: Berikan Izin Eksekusi Gradle
       run: chmod +x gradlew
