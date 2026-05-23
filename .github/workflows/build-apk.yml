@@ -16,17 +16,17 @@ jobs:
       uses: actions/setup-java@v4
       with:
         distribution: 'zulu'
-        java-version: '21' # 🟢 Dinaikkan ke Java 21 untuk mendukung stabilitas Kotlin & Gradle modern
+        java-version: '21' # Tetap di Java 21 karena Gradle 9+ wajib menggunakan Java versi tinggi
 
     - name: Pasang Ulang Gradle Wrapper Resmi (Anti-Corrupt)
       run: |
-        gradle wrapper --gradle-version 8.5 --distribution-type all
+        # 🟢 VERSI DIPERBARUI: Mengunduh Gradle versi 9.3.1 untuk mendukung plugin AGP 9.1.1 proyek Anda
+        gradle wrapper --gradle-version 9.3.1 --distribution-type all
 
     - name: Berikan Izin Eksekusi Gradle
       run: chmod +x gradlew
 
     - name: Kompilasi APK Asli (Android Native)
-      # 🟢 Menambahkan opsi penanganan memori (-Dorg.gradle.jvmargs) agar proses compile tidak kehabisan RAM di runner
       run: ./gradlew assembleDebug -Dorg.gradle.jvmargs="-Xmx2048m -XX:MaxMetaspaceSize=512m"
 
     - name: Upload APK Artifact
