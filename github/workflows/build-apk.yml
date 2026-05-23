@@ -5,8 +5,9 @@ on:
     branches: [ main, master ]
   workflow_dispatch:
 
+# Menghapus env FORCE_JAVASCRIPT_ACTIONS_TO_NODE24 agar tidak memicu peringatan ketat dari runner
 env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: true
 
 jobs:
   build:
@@ -35,24 +36,20 @@ jobs:
 
     - name: Paksa Pembuatan Folder dist dan index.html via Node.js
       run: |
-        # Menjalankan script inline Node.js untuk memastikan folder dist & index.html terbentuk tanpa gagal
         node -e "
         const fs = require('fs');
         const path = require('path');
         
-        // 1. Jalankan build bawaan jika ada
         try {
           require('child_process').execSync('npm run build --if-present', { stdio: 'inherit' });
         } catch (e) {}
 
         const distPath = path.join(process.cwd(), 'dist');
         
-        // 2. Buat folder dist jika belum ada
         if (!fs.existsSync(distPath)) {
           fs.mkdirSync(distPath, { recursive: true });
         }
         
-        // 3. Salin file HTML/JS/CSS utama dari root ke dist jika ada
         const files = fs.readdirSync(process.cwd());
         files.forEach(file => {
           if (['.html', '.js', '.css'].includes(path.extname(file)) && !file.startsWith('package') && !file.startsWith('capacitor')) {
@@ -60,7 +57,6 @@ jobs:
           }
         });
 
-        // 4. Proteksi Mutlak: Jika index.html tetap tidak ada di dist, buat paksa!
         const indexPath = path.join(distPath, 'index.html');
         if (!fs.existsSync(indexPath)) {
           const htmlContent = '<!DOCTYPE html><html><head><meta charset=\"UTF-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\"><title>AI Studio App</title></head><body><div id=\"root\"></div><div id=\"app\"></div><script src=\"index.js\"></script></body></html>';
@@ -71,14 +67,9 @@ jobs:
 
     - name: Inisialisasi dan Konfigurasi Capacitor
       run: |
-        # Hapus sisa folder android lama agar bersih
         rm -rf android
         rm -f capacitor.config.json
-        
-        # Inisialisasi konfigurasi baru
         npx cap init "AI Studio App" "com.aistudio.myapp" --web-dir=dist
-        
-        # Tambahkan platform android
         npx cap add android
 
     - name: Sinkronisasi Berkas Web ke Android
