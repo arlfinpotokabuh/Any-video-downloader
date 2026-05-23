@@ -20,14 +20,14 @@ jobs:
 
     - name: Pasang Ulang Gradle Wrapper Resmi (Anti-Corrupt)
       run: |
-        # Mengunduh dan memasang ulang file gradle-wrapper.jar yang bersih dari server resmi Gradle
         gradle wrapper --gradle-version 8.5 --distribution-type all
 
     - name: Berikan Izin Eksekusi Gradle
       run: chmod +x gradlew
 
-    - name: Kompilasi APK Asli (Android Native)
-      run: ./gradlew assembleDebug
+    - name: Kompilasi APK dengan Pelacak Error Mendalam
+      # 🟢 BARU: Menambahkan flag untuk memaksa Gradle membongkar letak error kodenya
+      run: ./gradlew assembleDebug --stacktrace --info
 
     - name: Upload APK Artifact
       uses: actions/upload-artifact@v4
