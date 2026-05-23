@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true # Memaksa sistem menggunakan standar Node.js 24 tahun 2026
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   build:
@@ -27,23 +27,25 @@ jobs:
 
     - name: Inisialisasi Proyek Web AI Studio
       run: |
-        # Membuat file package.json otomatis jika belum ada
         if [ ! -f package.json ]; then
           npm init -y
         fi
         
-        # Membuat folder penampung aplikasi web
         mkdir -p dist
         
-        # Menyalin file html, css, js ke folder dist dengan aman tanpa memicu error loop
-        cp *.html dist/ 2>/dev/null || true
-        cp *.css dist/ 2>/dev/null || true
-        cp *.js dist/ 2>/dev/null || true
-        cp -r assets dist/ 2>/dev/null || true
-        cp -r src dist/ 2>/dev/null || true
+        # Cari file HTML apa pun di seluruh folder proyek untuk dijadikan halaman utama
+        FILE_HTML_ASLI=$(find . -name "*.html" -not -path "./dist/*" | head -n 1)
         
-        # Buat file index.html tiruan jika proyek kosong agar build tidak crash
-        if [ ! -f dist/index.html ]; then
+        if [ -n "$FILE_HTML_ASLI" ]; then
+          echo "Menemukan file HTML utama di: $FILE_HTML_ASLI"
+          # Ambil folder tempat file HTML itu berada
+          FOLDER_ASLI=$(dirname "$FILE_HTML_ASLI")
+          # Salin seluruh isi folder tersebut ke folder dist rilis
+          cp -r $FOLDER_ASLI/* dist/ 2>/dev/null || true
+          # Pastikan file HTML utamanya diganti nama menjadi index.html di dalam folder dist
+          cp "$FILE_HTML_ASLI" dist/index.html
+        else
+          echo "Peringatan: Tidak ada file HTML ditemukan. Membuat halaman index.html darurat."
           echo '<h1>AI Studio App</h1>' > dist/index.html
         fi
 
