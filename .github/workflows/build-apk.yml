@@ -12,11 +12,11 @@ jobs:
     - name: Checkout Code
       uses: actions/checkout@v4
 
-    - name: Set up JDK 17
+    - name: Set up JDK 21
       uses: actions/setup-java@v4
       with:
         distribution: 'zulu'
-        java-version: '17'
+        java-version: '21' # 🟢 Dinaikkan ke Java 21 untuk mendukung stabilitas Kotlin & Gradle modern
 
     - name: Pasang Ulang Gradle Wrapper Resmi (Anti-Corrupt)
       run: |
@@ -25,9 +25,9 @@ jobs:
     - name: Berikan Izin Eksekusi Gradle
       run: chmod +x gradlew
 
-    - name: Kompilasi APK dengan Pelacak Error Mendalam
-      # 🟢 BARU: Menambahkan flag untuk memaksa Gradle membongkar letak error kodenya
-      run: ./gradlew assembleDebug --stacktrace --info
+    - name: Kompilasi APK Asli (Android Native)
+      # 🟢 Menambahkan opsi penanganan memori (-Dorg.gradle.jvmargs) agar proses compile tidak kehabisan RAM di runner
+      run: ./gradlew assembleDebug -Dorg.gradle.jvmargs="-Xmx2048m -XX:MaxMetaspaceSize=512m"
 
     - name: Upload APK Artifact
       uses: actions/upload-artifact@v4
