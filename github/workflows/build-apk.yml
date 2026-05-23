@@ -27,26 +27,38 @@ jobs:
 
     - name: Inisialisasi Proyek Web AI Studio
       run: |
+        # Mengisi package.json dasar jika belum ada
         if [ ! -f package.json ]; then
           npm init -y
         fi
         
+        # Menginstal pustaka pendukung web rilis secara otomatis
+        npm install
+        
+        # Mencoba melakukan kompilasi proyek React/Next/Vite jika ada skrip build
+        npm run build --if-present
+
+        # Membuat folder dist untuk pembungkus Android
         mkdir -p dist
         
-        # Cari file HTML apa pun di seluruh folder proyek untuk dijadikan halaman utama
-        FILE_HTML_ASLI=$(find . -name "*.html" -not -path "./dist/*" | head -n 1)
+        # Strategi 1: Jika kompilasi menghasilkan folder build/out/dist, pindahkan isinya
+        if [ -d "out" ]; then cp -r out/* dist/ 2>/dev/null || true; fi
+        if [ -d "build" ] && [ "build" != "dist" ]; then cp -r build/* dist/ 2>/dev/null || true; fi
+        if [ -d ".next" ]; then cp -r .next/* dist/ 2>/dev/null || true; fi
         
-        if [ -n "$FILE_HTML_ASLI" ]; then
-          echo "Menemukan file HTML utama di: $FILE_HTML_ASLI"
-          # Ambil folder tempat file HTML itu berada
-          FOLDER_ASLI=$(dirname "$FILE_HTML_ASLI")
-          # Salin seluruh isi folder tersebut ke folder dist rilis
-          cp -r $FOLDER_ASLI/* dist/ 2>/dev/null || true
-          # Pastikan file HTML utamanya diganti nama menjadi index.html di dalam folder dist
-          cp "$FILE_HTML_ASLI" dist/index.html
-        else
-          echo "Peringatan: Tidak ada file HTML ditemukan. Membuat halaman index.html darurat."
-          echo '<h1>AI Studio App</h1>' > dist/index.html
+        # Strategi 2: Salin file statis yang ada di folder utama ke dist
+        cp *.html dist/ 2>/dev/null || true
+        cp *.css dist/ 2>/dev/null || true
+        cp *.js dist/ 2>/dev/null || true
+        cp -r public/* dist/ 2>/dev/null || true
+        
+        # Strategi 3 (Proteksi): Jika index.html tetap tidak ada, buat file index.html otomatis 
+        # agar Capacitor tidak crash dan aplikasi web tetap bisa berjalan lewat script js utama.
+        if [ ! -f dist/index.html ]; then
+          echo '<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>AI Studio App</title></head><body><div id="root"></div><div id="app"></div><script src="index.js"></script><script src="main.js"></script><script src="bundle.js"></script></body></html>' > dist/index.html
+          # Cari file js utama dan salin ke dist jika ada di folder luar
+          FILE_JS=$(find . -maxdepth 1 -name "*.js" -not -name "package*.js" | head -n 1)
+          if [ -n "$FILE_JS" ]; then cp "$FILE_JS" dist/index.js; fi
         fi
 
     - name: Pasang Dependency Kompilasi
