@@ -22,19 +22,19 @@ jobs:
         distribution: 'zulu'
         java-version: '21'
 
+    - name: Intelijen - Bongkar Daftar Semua File Repositori
+      run: |
+        echo "=== DAFTAR SEMUA FILE DI REPOSITORI ANDA ==="
+        find . -maxdepth 3 -not -path '*/.*'
+        echo "============================================"
+
     - name: Pasang Pustaka dan Dependency AI Studio
       run: |
         if [ ! -f package.json ]; then
           npm init -y
         fi
-        
-        # Bersihkan sisa cache agar folder fresh
         rm -rf dist build out .next android capacitor.config.json index.html
-        
-        # Install dependency asli proyek
         npm install --legacy-peer-deps
-        
-        # Install library pembungkus Android
         npm install @capacitor/core @capacitor/cli @capacitor/android
 
     - name: Pemindaian Struktur dan Fabrikasi Berkas Entry Point
@@ -43,7 +43,6 @@ jobs:
         const fs = require('fs');
         const path = require('path');
 
-        // 1. Fungsi rekursif untuk mencari file penting (.html, .tsx, .jsx, .ts, .js)
         function scanFiles(dir, fileList = { html: [], js: [] }) {
           const files = fs.readdirSync(dir);
           files.forEach(file => {
@@ -62,51 +61,31 @@ jobs:
           return fileList;
         }
 
-        console.log('⏳ Memulai pemindaian arsitektur proyek...');
         const scanResults = scanFiles(process.cwd());
-        
         let rootIndexExists = fs.existsSync(path.join(process.cwd(), 'index.html'));
 
-        // 2. Logika pembuatan / penyesuaian index.html
         if (scanResults.html.length === 0) {
-          console.log('⚠️ Repositori tidak memiliki file HTML fisik.');
-          
-          // Cari file JS/TSX yang paling berpotensi sebagai penggerak (mengandung logika render)
           let mainScript = '';
-          
-          // Cari file yang namanya mengandung main, index, atau app
           const priorityKeywords = ['main', 'index', 'app', 'App'];
           for (const kw of priorityKeywords) {
             const found = scanResults.js.find(f => f.toLowerCase().includes(kw));
-            if (found) {
-              mainScript = path.relative(process.cwd(), found);
-              break;
-            }
+            if (found) { mainScript = path.relative(process.cwd(), found); break; }
           }
-          
-          // Jika tidak ada keyword prioritas, ambil file js/tsx pertama yang ditemukan
           if (!mainScript && scanResults.js.length > 0) {
             mainScript = path.relative(process.cwd(), scanResults.js[0]);
           }
 
-          console.log('🟢 Mengunci file motor utama aplikasi: ' + (mainScript || 'Tidak ditemukan, menggunakan fallback template'));
-
-          // Susun file index.html yang diarahkan langsung ke file penggerak asli proyek Anda
           const scriptTag = mainScript ? '<script type=\"module\" src=\"/' + mainScript + '\"></script>' : '';
-          const htmlTemplate = '<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n  <meta charset=\"UTF-8\" />\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\n  <title>Any Video Downloader</title>\n</head>\n<body>\n  <div id=\"root\"></div>\n  <div id=\"app\"></div>\n  ' + scriptTag + '\n</body>\n</html>';
+          const htmlTemplate = '<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UTF-8\" />\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\n  <title>Any Video Downloader</title>\n</head>\n<body>\n  <div id=\"root\"></div>\n  <div id=\"app\"></div>\n  ' + scriptTag + '\n</body>\n</html>';
           
           fs.writeFileSync(path.join(process.cwd(), 'index.html'), htmlTemplate, 'utf8');
-          console.log('🟢 Perakitan index.html sukses menyesuaikan berkas: ' + mainScript);
         } else {
-          // Jika ada file HTML bawaan, salin ke root agar bisa dibaca Vite
           const sourceHtml = scanResults.html.find(f => f.toLowerCase().includes('index.html')) || scanResults.html[0];
           if (sourceHtml && !rootIndexExists) {
             fs.copyFileSync(sourceHtml, path.join(process.cwd(), 'index.html'));
-            console.log('💡 Menyalin file HTML bawaan dari ' + sourceHtml + ' ke folder root.');
           }
         }
 
-        // 3. Amankan base path pada config Vite jika menggunakan jalur absolut
         const viteFiles = ['vite.config.js', 'vite.config.ts'];
         for (const file of viteFiles) {
           if (fs.existsSync(file)) {
@@ -116,7 +95,6 @@ jobs:
               content = content.replace('defineConfig({', \"defineConfig({\n  base: './',\");
             }
             fs.writeFileSync(file, content, 'utf8');
-            console.log('🟢 Parameter konfigurasi Vite disesuaikan.');
             break;
           }
         }
@@ -124,13 +102,11 @@ jobs:
 
     - name: Eksekusi Kompilasi Web AI Studio
       run: |
-        # Jalankan build dengan skrip yang tersedia
         if npx vite build; then
           echo "🟢 Kompilasi via Vite CLI berhasil!"
         elif npm run build --if-present; then
-          echo "🟢 Kompilasi via Script build package.json berhasil!"
+          echo "🟢 Kompilasi via Script build berhasil!"
         else
-          echo "⚠️ Deteksi kegagalan build otomatis, menerapkan mode pemindahan aset statis murni..."
           mkdir -p dist
           cp -r * dist/ 2>/dev/null || true
           rm -rf dist/node_modules dist/dist dist/android
@@ -138,11 +114,9 @@ jobs:
 
     - name: Validasi Akhir Folder Output
       run: |
-        # Mengonsolidasikan hasil kompilasi ke folder dist
         if [ ! -d "dist" ]; then
           if [ -d "build" ]; then mv build dist; fi
           if [ -d "out" ]; then mv out dist; fi
-          if [ -d ".next" ]; then mv .next dist; fi
         fi
         mkdir -p dist
         if [ ! -f dist/index.html ] && [ -f index.html ]; then
@@ -163,7 +137,6 @@ jobs:
           sed -i '/<\/manifest>/i \    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" \/>' $MANIFEST_PATH
           sed -i '/<\/manifest>/i \    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" \/>' $MANIFEST_PATH
           sed -i 's/<application/<application android:usesCleartextTraffic="true"/g' $MANIFEST_PATH
-          echo "🟢 Manifes Android sukses dikonfigurasi dengan izin penuh!"
         fi
 
     - name: Sinkronisasi Berkas Web ke Android
