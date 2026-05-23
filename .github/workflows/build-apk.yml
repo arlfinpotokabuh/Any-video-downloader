@@ -5,13 +5,11 @@ on:
     branches: [ main, master ]
   workflow_dispatch:
 
-env:
-  ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: true
-
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
+    # 🟢 1. Menggunakan versi aksi terbaru untuk menghilangkan peringatan Node.js 20
     - uses: actions/checkout@v4
 
     - name: Set up Node.js 24
@@ -39,65 +37,75 @@ jobs:
         const fs = require('fs');
         const path = require('path');
 
-        // 1. Deteksi dan Perbaiki vite.config.js / vite.config.ts agar menggunakan base: './'
+        // Mengamankan base path pada file konfigurasi Vite proyek AI Studio
         const viteFiles = ['vite.config.js', 'vite.config.ts'];
-        let viteConfigFound = false;
-
         for (const file of viteFiles) {
           if (fs.existsSync(file)) {
             let content = fs.readFileSync(file, 'utf8');
-            // Jika belum ada konfigurasi base, sisipkan base: './'
             if (!content.includes('base:')) {
               content = content.replace('defineConfig({', \"defineConfig({\n  base: './',\");
               fs.writeFileSync(file, content, 'utf8');
               console.log('🟢 Sukses menyisipkan jalur relatif ke ' + file);
             }
-            viteConfigFound = true;
             break;
           }
         }
 
-        // 2. Jalankan build resmi proyek AI Studio
+        // Menjalankan build bawaan AI Studio
         try {
-          console.log('⏳ Memulai kompilasi proyek web AI Studio...');
           require('child_process').execSync('npm run build', { stdio: 'inherit' });
         } catch (e) {
-          console.log('⚠️ Perintah build gagal, mencoba strategi fallback...');
           try { require('child_process').execSync('npm run build --if-present', { stdio: 'inherit' }); } catch(err) {}
         }
 
-        // 3. Pastikan folder dist terisi dengan benar
+        // Konsolidasi folder hasil output
         const distPath = path.join(process.cwd(), 'dist');
-        if (!fs.existsSync(distPath)) {
-          fs.mkdirSync(distPath, { recursive: true });
-        }
+        if (!fs.existsSync(distPath)) { fs.mkdirSync(distPath, { recursive: true }); }
 
-        // 4. Salin file statis jika kompilasi AI Studio lari ke folder selain dist (out/build)
         const alternateFolders = ['out', 'build', '.next'];
         alternateFolders.forEach(folder => {
           const folderPath = path.join(process.cwd(), folder);
           if (fs.existsSync(folderPath) && folder !== 'dist') {
-            try {
-              require('child_process').execSync(\"cp -r \" + folder + \"/* dist/ 2>/dev/null || true\");
-              console.log('🟢 Berhasil menyalin aset dari folder ' + folder);
-            } catch(e) {}
+            try { require('child_process').execSync('cp -r ' + folder + '/* dist/ 2>/dev/null || true'); } catch(e) {}
           }
         });
 
-        // 5. Proteksi Mutlak: Jika index.html tidak ada sama sekali, buat file darurat
+        // Memperbaiki jalur tag script pada index.html hasil build agar ramah WebView Android
         const indexPath = path.join(distPath, 'index.html');
-        if (!fs.existsSync(indexPath)) {
+        if (fs.existsSync(indexPath)) {
+          let html = fs.readFileSync(indexPath, 'utf8');
+          // Mengubah src=\"/assets/ menjadi src=\"assets/ atau src=\"./assets/
+          html = html.replace(/src=\"\/assets\//g, 'src=\"assets/');
+          html = html.replace(/href=\"\/assets\//g, 'href=\"assets/');
+          fs.writeFileSync(indexPath, html, 'utf8');
+          console.log('🟢 Sukses mengoptimalkan index.html untuk WebView Android');
+        } else {
+          // Membuat file darurat jika index.html kosong
           const htmlContent = '<!DOCTYPE html><html><head><meta charset=\"UTF-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\"><title>AI Studio App</title></head><body><div id=\"root\"></div><div id=\"app\"></div><script src=\"index.js\"></script></body></html>';
           fs.writeFileSync(indexPath, htmlContent, 'utf8');
         }
         "
 
-    - name: Inisialisasi dan Konfigurasi Capacitor
+    - name: Inisialisasi Pembungkus Android
       run: |
         rm -rf android
         rm -f capacitor.config.json
         npx cap init "Any Video Downloader" "com.aistudio.anyvideodownloader" --web-dir=dist
         npx cap add android
+
+    # 🟢 BARU: Menyisipkan Izin Akses Internet & Cleartext Traffic secara otomatis ke manifes Android
+    - name: Suntik Izin Internet ke Android Manifest
+      run: |
+        MANIFEST_PATH="android/app/src/main/AndroidManifest.xml"
+        if [ -f "$MANIFEST_PATH" ]; then
+          # Menambahkan izin INTERNET jika belum terdaftar
+          sed -i '/<\/manifest>/i \    <uses-permission android:name="android.permission.INTERNET" \/>' $MANIFEST_PATH
+          sed -i '/<\/manifest>/i \    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" \/>' $MANIFEST_PATH
+          
+          # Mengizinkan lalu lintas HTTP biasa (Cleartext) agar API downloader video tidak diblokir Android
+          sed -i 's/<application/<application android:usesCleartextTraffic="true"/g' $MANIFEST_PATH
+          echo "🟢 Sukses menyuntikkan konfigurasi jaringan & izin internet ke Android!"
+        fi
 
     - name: Sinkronisasi Berkas Web ke Android
       run: npx cap sync android
