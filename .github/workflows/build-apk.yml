@@ -1,4 +1,4 @@
-name: Build Android APK from AI Studio Web
+name: Build Android APK from AI Studio Native
 
 on:
   push:
@@ -9,147 +9,26 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
+    - name: Checkout Code
+      uses: actions/checkout@v4
 
-    - name: Set up Node.js 24
-      uses: actions/setup-node@v4
-      with:
-        node-version: '24'
-
-    - name: Set up JDK 21
+    - name: Set up JDK 17
       uses: actions/setup-java@v4
       with:
         distribution: 'zulu'
-        java-version: '21'
+        java-version: '17' # Proyek Kotlin/Gradle umumnya sangat stabil di JDK 17
 
-    - name: Intelijen - Bongkar Daftar Semua File Repositori
-      run: |
-        echo "=== DAFTAR SEMUA FILE DI REPOSITORI ANDA ==="
-        find . -maxdepth 3 -not -path '*/.*'
-        echo "============================================"
+    - name: Setup Gradle Cache
+      uses: actions/setup-gradle@v4
 
-    - name: Pasang Pustaka dan Dependency AI Studio
-      run: |
-        if [ ! -f package.json ]; then
-          npm init -y
-        fi
-        rm -rf dist build out .next android capacitor.config.json index.html
-        npm install --legacy-peer-deps
-        npm install @capacitor/core @capacitor/cli @capacitor/android
+    - name: Berikan Izin Eksekusi Gradle
+      run: chmod +x gradlew
 
-    - name: Pemindaian Struktur dan Fabrikasi Berkas Entry Point
-      run: |
-        node -e "
-        const fs = require('fs');
-        const path = require('path');
-
-        function scanFiles(dir, fileList = { html: [], js: [] }) {
-          const files = fs.readdirSync(dir);
-          files.forEach(file => {
-            const filePath = path.join(dir, file);
-            if (fs.statSync(filePath).isDirectory()) {
-              if (file !== 'node_modules' && file !== 'android' && !file.startsWith('.')) {
-                scanFiles(filePath, fileList);
-              }
-            } else {
-              if (file.endsWith('.html')) fileList.html.push(filePath);
-              if (['.tsx', '.jsx', '.js', '.ts'].includes(path.extname(file)) && !file.startsWith('package') && !file.startsWith('capacitor') && !file.includes('config')) {
-                fileList.js.push(filePath);
-              }
-            }
-          });
-          return fileList;
-        }
-
-        const scanResults = scanFiles(process.cwd());
-        let rootIndexExists = fs.existsSync(path.join(process.cwd(), 'index.html'));
-
-        if (scanResults.html.length === 0) {
-          let mainScript = '';
-          const priorityKeywords = ['main', 'index', 'app', 'App'];
-          for (const kw of priorityKeywords) {
-            const found = scanResults.js.find(f => f.toLowerCase().includes(kw));
-            if (found) { mainScript = path.relative(process.cwd(), found); break; }
-          }
-          if (!mainScript && scanResults.js.length > 0) {
-            mainScript = path.relative(process.cwd(), scanResults.js[0]);
-          }
-
-          const scriptTag = mainScript ? '<script type=\"module\" src=\"/' + mainScript + '\"></script>' : '';
-          const htmlTemplate = '<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UTF-8\" />\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\n  <title>Any Video Downloader</title>\n</head>\n<body>\n  <div id=\"root\"></div>\n  <div id=\"app\"></div>\n  ' + scriptTag + '\n</body>\n</html>';
-          
-          fs.writeFileSync(path.join(process.cwd(), 'index.html'), htmlTemplate, 'utf8');
-        } else {
-          const sourceHtml = scanResults.html.find(f => f.toLowerCase().includes('index.html')) || scanResults.html[0];
-          if (sourceHtml && !rootIndexExists) {
-            fs.copyFileSync(sourceHtml, path.join(process.cwd(), 'index.html'));
-          }
-        }
-
-        const viteFiles = ['vite.config.js', 'vite.config.ts'];
-        for (const file of viteFiles) {
-          if (fs.existsSync(file)) {
-            let content = fs.readFileSync(file, 'utf8');
-            content = content.replace(/root\s*:\s*['\"].*?['\"],?/g, '');
-            if (!content.includes('base:')) {
-              content = content.replace('defineConfig({', \"defineConfig({\n  base: './',\");
-            }
-            fs.writeFileSync(file, content, 'utf8');
-            break;
-          }
-        }
-        "
-
-    - name: Eksekusi Kompilasi Web AI Studio
-      run: |
-        if npx vite build; then
-          echo "🟢 Kompilasi via Vite CLI berhasil!"
-        elif npm run build --if-present; then
-          echo "🟢 Kompilasi via Script build berhasil!"
-        else
-          mkdir -p dist
-          cp -r * dist/ 2>/dev/null || true
-          rm -rf dist/node_modules dist/dist dist/android
-        fi
-
-    - name: Validasi Akhir Folder Output
-      run: |
-        if [ ! -d "dist" ]; then
-          if [ -d "build" ]; then mv build dist; fi
-          if [ -d "out" ]; then mv out dist; fi
-        fi
-        mkdir -p dist
-        if [ ! -f dist/index.html ] && [ -f index.html ]; then
-          cp index.html dist/index.html
-        fi
-
-    - name: Inisialisasi Pembungkus Android
-      run: |
-        npx cap init "Any Video Downloader" "com.aistudio.anyvideodownloader" --web-dir=dist
-        npx cap add android
-
-    - name: Suntik Izin Akses Internet & Penyimpanan Galeri
-      run: |
-        MANIFEST_PATH="android/app/src/main/AndroidManifest.xml"
-        if [ -f "$MANIFEST_PATH" ]; then
-          sed -i '/<\/manifest>/i \    <uses-permission android:name="android.permission.INTERNET" \/>' $MANIFEST_PATH
-          sed -i '/<\/manifest>/i \    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" \/>' $MANIFEST_PATH
-          sed -i '/<\/manifest>/i \    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" \/>' $MANIFEST_PATH
-          sed -i '/<\/manifest>/i \    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" \/>' $MANIFEST_PATH
-          sed -i 's/<application/<application android:usesCleartextTraffic="true"/g' $MANIFEST_PATH
-        fi
-
-    - name: Sinkronisasi Berkas Web ke Android
-      run: npx cap sync android
-
-    - name: Build APK via Gradle
-      run: |
-        cd android
-        chmod +x gradlew
-        ./gradlew assembleDebug
+    - name: Kompilasi APK Asli (Android Native)
+      run: ./gradlew assembleDebug
 
     - name: Upload APK Artifact
       uses: actions/upload-artifact@v4
       with:
         name: ai-studio-apk
-        path: android/app/build/outputs/apk/**/*.apk
+        path: app/build/outputs/apk/debug/*.apk
